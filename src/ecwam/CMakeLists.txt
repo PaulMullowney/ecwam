@@ -46,6 +46,7 @@ if( NOT TARGET ecwam_intfb )
 endif()
 
 list( APPEND ecwam_srcs
+  bswap32_array.c
   abort1.F90
   adjust.F90
   airsea.F90

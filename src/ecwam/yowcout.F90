@@ -67,6 +67,10 @@
       INTEGER(KIND=JWIM) :: NTEWH
       INTEGER(KIND=JWIM) :: IFRSTPARTI
       INTEGER(KIND=JWIM) :: IPFGTBL(JPPFLAG+1)
+!     Restart spectra are handled KDEL directions by MDEL frequencies at a
+!     time. These also size the MPDISTRIBFL/MPGATHERFL exchange buffers, so
+!     widening them to batch I/O inflates every MPI message with it; the
+!     read batching is decoupled from this in GETSPEC instead.
       INTEGER(KIND=JWIM), PARAMETER :: KDEL=1
       INTEGER(KIND=JWIM), PARAMETER :: MDEL=1
       INTEGER(KIND=JWIM) :: IPRMINFO(JPPFLAG,NIPRMINFO)
