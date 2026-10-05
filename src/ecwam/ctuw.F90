@@ -87,6 +87,7 @@ SUBROUTINE CTUW (DELPRO, MSTART, MEND,                    &
       REAL(KIND=JWRB) :: CGYP, CGTH
       REAL(KIND=JWRB) :: DELTH0, DELFR0, SP, SM, DTHP, DTHM, DFP, DFM 
       REAL(KIND=JWRB) :: TANPH
+      REAL(KIND=JWRB) :: DRGP0, DRGM0, DRDP0, DRDM0, DRCP0, DRCM0
       REAL(KIND=JWRB) :: DXX, DYY
       REAL(KIND=JWRB) :: UU, VV, UREL, VREL
       REAL(KIND=JWRB) :: XLAT, XLON
@@ -99,7 +100,7 @@ SUBROUTINE CTUW (DELPRO, MSTART, MEND,                    &
       REAL(KIND=JWRB), DIMENSION(KIJS:KIJL) :: DRDP,DRDM
       REAL(KIND=JWRB), DIMENSION(KIJS:KIJL) :: DRCP,DRCM
       REAL(KIND=JWRB), DIMENSION(KIJS:KIJL) :: CURMASK
-      REAL(KIND=JWRB), DIMENSION(KIJS:KIJL,2) :: CGX, CGY
+      REAL(KIND=JWRB), DIMENSION(2) :: CGX, CGY
 
 
 ! ----------------------------------------------------------------------
@@ -152,17 +153,17 @@ IF (LHOOK) CALL DR_HOOK('CTUW',0,ZHOOK_HANDLE)
 
 !*          LOOP OVER DIRECTIONS.
 !           ---------------------
-!$acc loop private(CGX,CGY)
+!$acc loop
 
             DO K=1,NANG
 
 !             FIND MEAN GROUP VELOCITY COMPONENTS FOR DIRECTION TH(K)+180
 !             -----------------------------------------------------------
-!$acc loop private(CGYP,IX,KY,UU,UREL,ISSU,VV,VREL,ISSV,DXP,DYP,ADXP,ADYP,DXUP,DXDW,DYUP,DYDW,DXX,DYY,GRIDAREAM1,WEIGHT)
+!$acc loop private(CGX,CGY,CGYP,IX,KY,UU,UREL,ISSU,VV,VREL,ISSV,DXP,DYP,ADXP,ADYP,DXUP,DXDW,DYUP,DYDW,DXX,DYY,GRIDAREAM1,WEIGHT)
                   DO IJ=KIJS,KIJL
 !                   IC = 1 
 
-                    CGX(IJ,1)=                                              &
+                    CGX(1)=                                              &
      &                 0.5_JWRB*(CGROUP_EXT(IJ,M)+CGROUP_EXT(KLON(IJ,1),M)) &
      &                    *SINTH(K)*COSPHM1_EXT(IJ)
 !                   IRREGULAR GRID
@@ -173,21 +174,21 @@ IF (LHOOK) CALL DR_HOOK('CTUW',0,ZHOOK_HANDLE)
 !                   REGULAR GRID
                       CGYP=CGROUP_EXT(KLAT(IJ,1,1),M)
                     ENDIF
-                    CGY(IJ,1)=0.5_JWRB*(CGROUP_EXT(IJ,M)+DP(IJ,1)*CGYP)*COSTH(K)
+                    CGY(1)=0.5_JWRB*(CGROUP_EXT(IJ,M)+DP(IJ,1)*CGYP)*COSTH(K)
 
                     IX=BLK2GLO%IXLG(IJ)
                     KY=BLK2GLO%KXLT(IJ)
                     IF (IREFRA == 2 .OR. IREFRA == 3 ) THEN
                       UU=U_EXT(IJ)*COSPHM1_EXT(IJ)
-                      UREL=CGX(IJ,1)+UU
-                      ISSU(1)=ISAMESIGN(UREL,CGX(IJ,1))
+                      UREL=CGX(1)+UU
+                      ISSU(1)=ISAMESIGN(UREL,CGX(1))
                       VV=V_EXT(IJ)*0.5_JWRB*(1.0_JWRB+DP(IJ,1))
-                      VREL=CGY(IJ,1)+VV
-                      ISSV(1)=ISAMESIGN(VREL,CGY(IJ,1))
+                      VREL=CGY(1)+VV
+                      ISSV(1)=ISAMESIGN(VREL,CGY(1))
                     ELSE
-                      UREL=CGX(IJ,1)
+                      UREL=CGX(1)
                       ISSU(1)=1
-                      VREL=CGY(IJ,1)
+                      VREL=CGY(1)
                       ISSV(1)=1
                     ENDIF
                     DXP=-DELPRO*UREL*CMTODEG
@@ -201,7 +202,7 @@ IF (LHOOK) CALL DR_HOOK('CTUW',0,ZHOOK_HANDLE)
                     DYDW(1)=ADYP(1)*(1-ISSV(1))
 !                   GET ADVECTION WEIGHT FOR ALL NEIGHBOURING GRID POINTS
 !                   IC = 2 
-                    CGX(IJ,2)=                                              &
+                    CGX(2)=                                              &
      &                 0.5_JWRB*(CGROUP_EXT(IJ,M)+CGROUP_EXT(KLON(IJ,2),M)) &
      &                    *SINTH(K)*COSPHM1_EXT(IJ)
 !                   IRREGULAR GRID
@@ -212,18 +213,18 @@ IF (LHOOK) CALL DR_HOOK('CTUW',0,ZHOOK_HANDLE)
 !                   REGULAR GRID
                       CGYP=CGROUP_EXT(KLAT(IJ,2,1),M)
                     ENDIF
-                    CGY(IJ,2)=0.5_JWRB*(CGROUP_EXT(IJ,M)+DP(IJ,2)*CGYP)*COSTH(K)
+                    CGY(2)=0.5_JWRB*(CGROUP_EXT(IJ,M)+DP(IJ,2)*CGYP)*COSTH(K)
                     IF (IREFRA == 2 .OR. IREFRA == 3 ) THEN
                       UU=U_EXT(IJ)*COSPHM1_EXT(IJ)
-                      UREL=CGX(IJ,2)+UU
-                      ISSU(2)=ISAMESIGN(UREL,CGX(IJ,2))
+                      UREL=CGX(2)+UU
+                      ISSU(2)=ISAMESIGN(UREL,CGX(2))
                       VV=V_EXT(IJ)*0.5_JWRB*(1.0_JWRB+DP(IJ,2))
-                      VREL=CGY(IJ,2)+VV
-                      ISSV(2)=ISAMESIGN(VREL,CGY(IJ,2))
+                      VREL=CGY(2)+VV
+                      ISSV(2)=ISAMESIGN(VREL,CGY(2))
                     ELSE
-                      UREL=CGX(IJ,2)
+                      UREL=CGX(2)
                       ISSU(2)=1
-                      VREL=CGY(IJ,2)
+                      VREL=CGY(2)
                       ISSV(2)=1
                     ENDIF
                     DXP=-DELPRO*UREL*CMTODEG
@@ -419,12 +420,90 @@ IF (LHOOK) CALL DR_HOOK('CTUW',0,ZHOOK_HANDLE)
 !     ---------------------
 
 #ifdef OMPGPU
-      !$omp target teams distribute private(KP1,KM1,SP,SM,DELFR0,DRGP,DRGM,DRDP,DRDM,DRCP,DRCM) &
+!     DRGP/DRGM/DRDP/DRDM/DRCP/DRCM depend only on K and IJ, so each thread recomputes
+!     them as scalars rather than sharing team-wide arrays across the M loops below.
+      !$omp target teams distribute parallel do collapse(3) &
+      !$omp & private(KP1,KM1,SP,SM,JH,TANPH,DTHP,DTHM) &
+      !$omp & private(DRGP0,DRGM0,DRDP0,DRDM0,DRCP0,DRCM0) &
       !$omp & map(to: THDC,THDD,SDOT)
+      DO K=1,NANG
+        DO M = MSTART, MEND
+          DO IJ=KIJS,KIJL
+            KP1 = K+1
+            IF (KP1 > NANG) KP1 = 1
+            KM1 = K-1
+            IF (KM1 < 1) KM1 = NANG
+
+            SP  = DELTH0*(SINTH(K)+SINTH(KP1))/R
+            SM  = DELTH0*(SINTH(K)+SINTH(KM1))/R
+
+            JH=BLK2GLO%KXLT(IJ)
+            TANPH = SINPH(JH)/COSPH(JH)
+            DRGP0 = TANPH*SP
+            DRGM0 = TANPH*SM
+
+            IF (IREFRA == 1) THEN
+              DRDP0 = (THDD(IJ,K) + THDD(IJ,KP1))*DELTH0
+              DRDM0 = (THDD(IJ,K) + THDD(IJ,KM1))*DELTH0
+            ELSE
+              DRDP0 = 0.0_JWRB
+              DRDM0 = 0.0_JWRB
+            ENDIF
+
+            IF (IREFRA == 2 .OR. IREFRA == 3 ) THEN
+              DRCP0 = CURMASK(IJ)*(THDC(IJ,K) + THDC(IJ,KP1))*DELTH0
+              DRCM0 = CURMASK(IJ)*(THDC(IJ,K) + THDC(IJ,KM1))*DELTH0
+            ELSE
+              DRCP0 = 0.0_JWRB
+              DRCM0 = 0.0_JWRB
+            ENDIF
+
+            IF (IREFRA == 0) THEN
+              DTHP = DRGP0*CGROUP_EXT(IJ,M) + DRCP0
+              DTHM = DRGM0*CGROUP_EXT(IJ,M) + DRCM0
+            ELSE
+              DTHP = DRGP0*CGROUP_EXT(IJ,M)+OMOSNH2KD_EXT(IJ,M)*DRDP0+DRCP0
+              DTHM = DRGM0*CGROUP_EXT(IJ,M)+OMOSNH2KD_EXT(IJ,M)*DRDM0+DRCM0
+            ENDIF
+
+            WKPMN(IJ,K,M,0)=(DTHP+ABS(DTHP))+(ABS(DTHM)-DTHM)
+            WKPMN(IJ,K,M,1)=-DTHP+ABS(DTHP)
+            WKPMN(IJ,K,M,-1)=DTHM+ABS(DTHM)
+
+            SUMWN(IJ,K,M)=SUMWN(IJ,K,M)+WKPMN(IJ,K,M,0)
+          ENDDO
+        ENDDO
+      ENDDO
+      !$omp end target teams distribute parallel do
+
+      IF (IREFRA == 2 .OR. IREFRA == 3 ) THEN
+        DELFR0 = 0.25_JWRB*DELPRO/((FRATIO-1)*ZPI)
+      !$omp target teams distribute parallel do collapse(3) &
+      !$omp & private(MP1,MM1,DFP,DFM,DTHP,DTHM) &
+      !$omp & map(to: THDC,THDD,SDOT)
+        DO K=1,NANG
+          DO M = MSTART, MEND
+            DO IJ=KIJS,KIJL
+              MP1 = MIN(NFRE_RED,M+1)
+              MM1 = MAX(1,M-1)
+              DFP = DELFR0/FR(M)
+              DFM = DELFR0/FR(MM1)
+
+              DTHP = CURMASK(IJ) * (SDOT(IJ,K,M) + SDOT(IJ,K,MP1))*DFP
+              DTHM = CURMASK(IJ) * (SDOT(IJ,K,M) + SDOT(IJ,K,MM1))*DFM
+              WMPMN(IJ,K,M,0) =(DTHP+ABS(DTHP))+(ABS(DTHM)-DTHM)
+              WMPMN(IJ,K,M,1) =(-DTHP+ABS(DTHP))/FRATIO
+              WMPMN(IJ,K,M,-1)=(DTHM+ABS(DTHM))*FRATIO
+
+              SUMWN(IJ,K,M)=SUMWN(IJ,K,M)+WMPMN(IJ,K,M,0)
+            ENDDO
+          ENDDO
+        ENDDO
+      !$omp end target teams distribute parallel do
+      ENDIF
 #else
       !$acc parallel loop private(km1,kp1,sp,sm,DELFR0,DRGP,DRGM,DRDP,DRDM,DRCP,DRCM) &
       !$acc & present(THDC,THDD,SDOT)
-#endif
       DO K=1,NANG
         KP1 = K+1
         IF (KP1 > NANG) KP1 = 1
@@ -572,9 +651,6 @@ IF (LHOOK) CALL DR_HOOK('CTUW',0,ZHOOK_HANDLE)
         ENDIF
 
       ENDDO  ! END LOOP ON DIRECTIONS
-#ifdef OMPGPU
-!$omp end target teams distribute
-#else
 !$acc end parallel
 #endif
 
@@ -762,9 +838,7 @@ IF (LHOOK) CALL DR_HOOK('CTUW',0,ZHOOK_HANDLE)
           DO IJ=KIJS,KIJL
 
 !           POINTS ON SURROUNDING LATITUDES 
-#ifdef OMPGPU
-!$omp parallel do collapse(2)
-#else
+#ifndef OMPGPU
 !$acc loop collapse(2)
 #endif
             DO IC=1,2
@@ -774,9 +848,7 @@ IF (LHOOK) CALL DR_HOOK('CTUW',0,ZHOOK_HANDLE)
             ENDDO
 
 !           POINTS ON SURROUNDING LONGITUDE
-#ifdef OMPGPU
-!$omp parallel do
-#else
+#ifndef OMPGPU
 !$acc loop
 #endif
             DO IC=1,2
@@ -784,9 +856,7 @@ IF (LHOOK) CALL DR_HOOK('CTUW',0,ZHOOK_HANDLE)
             ENDDO
 
 !           SURROUNDING CORNER POINTS
-#ifdef OMPGPU
-!$omp parallel do collapse(2)
-#else
+#ifndef OMPGPU
 !$acc loop collapse(2)
 #endif
             DO ICR=1,4
