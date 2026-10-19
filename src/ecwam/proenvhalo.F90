@@ -64,7 +64,7 @@ IF (LHOOK) CALL DR_HOOK('PROENVHALO',0,ZHOOK_HANDLE)
 !!! mapping chuncks to block ONLY for actual grid points !!!!
 #ifdef WAM_GPU
 #ifdef OMPGPU
-!$omp target teams distribute private(KIJS,IJSB,KIJL,IJLB)
+!$omp target teams distribute parallel do collapse(2) private(KIJS,IJSB,KIJL,IJLB,IJ)
 #else
 !$acc kernels loop private(ICHNK, KIJS, IJSB, KIJL, IJLB)
 #endif
@@ -72,26 +72,38 @@ IF (LHOOK) CALL DR_HOOK('PROENVHALO',0,ZHOOK_HANDLE)
 !$OMP PARALLEL DO SCHEDULE(STATIC) PRIVATE(ICHNK, KIJS, IJSB, KIJL, IJLB, M, IJ)
 #endif
       DO ICHNK = 1, NCHNK
+#ifndef OMPGPU
         KIJS = 1
         IJSB = IJFROMCHNK(KIJS, ICHNK)
         KIJL = KIJL4CHNK(ICHNK)
         IJLB = IJFROMCHNK(KIJL, ICHNK)
 
-#ifdef OMPGPU
-!$omp parallel do private(IJ)
-#else
 !$acc loop
 #endif
         DO M = 1, NFRE_RED
+#ifdef OMPGPU
+          KIJS = 1
+          IJSB = IJFROMCHNK(KIJS, ICHNK)
+          KIJL = KIJL4CHNK(ICHNK)
+          IJLB = IJFROMCHNK(KIJL, ICHNK)
+#endif
           DO IJ = IJSB, IJLB
             BUFFER_EXT(IJ, M) = WAVNUM(IJ - IJSB + KIJS, M,ICHNK)
             BUFFER_EXT(IJ, M + NFRE_RED) = CGROUP(IJ - IJSB + KIJS, M,ICHNK)
             BUFFER_EXT(IJ, M + 2*NFRE_RED) = OMOSNH2KD(IJ - IJSB + KIJS, M,ICHNK)
           ENDDO
         ENDDO
+#ifdef OMPGPU
+      ENDDO
+!$omp end target teams distribute parallel do
 
-#ifdef OMPGPU        
-!$omp parallel do
+!     These fields index ICHNK only, so they cannot join the collapsed (ICHNK,M) nest above.
+!$omp target teams distribute parallel do private(KIJS,IJSB,KIJL,IJLB,IJ)
+      DO ICHNK = 1, NCHNK
+        KIJS = 1
+        IJSB = IJFROMCHNK(KIJS, ICHNK)
+        KIJL = KIJL4CHNK(ICHNK)
+        IJLB = IJFROMCHNK(KIJL, ICHNK)
 #else
 !$acc loop
 #endif
@@ -105,7 +117,7 @@ IF (LHOOK) CALL DR_HOOK('PROENVHALO',0,ZHOOK_HANDLE)
       ENDDO
 #ifdef WAM_GPU
 #ifdef OMPGPU
-!$omp end target teams distribute
+!$omp end target teams distribute parallel do
 #else
 !$acc end kernels
 #endif

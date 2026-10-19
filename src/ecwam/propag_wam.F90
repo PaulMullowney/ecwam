@@ -123,7 +123,7 @@ IF (LHOOK) CALL DR_HOOK('PROPAG_WAM',0,ZHOOK_HANDLE)
 !!! mapping chuncks to block ONLY for actual grid points !!!!
 #ifdef WAM_GPU
 #ifdef OMPGPU
-        !$omp target teams distribute private(KIJS,IJSB,KIJL,IJLB,M,K)
+        !$omp target teams distribute parallel do collapse(3) private(KIJS,IJSB,KIJL,IJLB)
 #else
         !$acc parallel loop gang private(KIJS, IJSB, KIJL, IJLB) vector_length(NPROMA_WAM)
 #endif
@@ -131,14 +131,20 @@ IF (LHOOK) CALL DR_HOOK('PROPAG_WAM',0,ZHOOK_HANDLE)
 !$OMP   PARALLEL DO SCHEDULE(STATIC) PRIVATE(ICHNK, KIJS, IJSB, KIJL, IJLB, M, K, IJ)
 #endif
         DO ICHNK = 1, NCHNK
+#ifndef OMPGPU
           KIJS = 1
           IJSB = IJFROMCHNK(KIJS, ICHNK)
           KIJL = KIJL4CHNK(ICHNK)
           IJLB = IJFROMCHNK(KIJL, ICHNK)
+#endif
           DO M = 1, NFRE_RED
             DO K = 1, NANG
 #ifdef OMPGPU
-              !$omp parallel do
+          KIJS = 1
+          IJSB = IJFROMCHNK(KIJS, ICHNK)
+          KIJL = KIJL4CHNK(ICHNK)
+          IJLB = IJFROMCHNK(KIJL, ICHNK)
+              !!$omp parallel do
 #else
               !$acc loop vector
 #endif
@@ -150,7 +156,7 @@ IF (LHOOK) CALL DR_HOOK('PROPAG_WAM',0,ZHOOK_HANDLE)
         ENDDO
 #ifdef WAM_GPU
 #ifdef OMPGPU
-        !$omp end target teams distribute
+        !$omp end target teams distribute parallel do
 #else
         !$acc end parallel loop
 #endif
@@ -324,7 +330,7 @@ IF (LHOOK) CALL DR_HOOK('PROPAG_WAM',0,ZHOOK_HANDLE)
 
 #ifdef WAM_GPU
 #ifdef OMPGPU
-!$omp target teams distribute private(KIJS,KIJL,M,K)
+!$omp target teams distribute parallel do collapse(3) private(KIJS,KIJL)
 #else
 !$acc parallel loop gang private(KIJS, KIJL) vector_length(NPROMA)
 #endif
@@ -332,12 +338,15 @@ IF (LHOOK) CALL DR_HOOK('PROPAG_WAM',0,ZHOOK_HANDLE)
 !$OMP            PARALLEL DO SCHEDULE(STATIC,1) PRIVATE(JKGLO, KIJS, KIJL, M, K, IJ)
 #endif
                  DO JKGLO = IJSG, IJLG, NPROMA
+#ifndef OMPGPU
                    KIJS=JKGLO
                    KIJL=MIN(KIJS+NPROMA-1, IJLG)
+#endif
                    DO M = ND3S, ND3E
                      DO K = 1, NANG
 #ifdef OMPGPU
-                       !$omp parallel do
+                       KIJS=JKGLO
+                       KIJL=MIN(KIJS+NPROMA-1, IJLG)
 #else
                        !$acc loop vector
 #endif
@@ -349,7 +358,7 @@ IF (LHOOK) CALL DR_HOOK('PROPAG_WAM',0,ZHOOK_HANDLE)
                  ENDDO
 #ifdef WAM_GPU
 #ifdef OMPGPU
-!$omp end target teams distribute
+!$omp end target teams distribute parallel do
 #else
 !$acc end parallel loop
 #endif
@@ -434,12 +443,40 @@ ENDIF  ! end sub time steps (if needed)
 
 !!! the advection schemes are still written in block structure
 !!!  So need to convert back to the nproma_wam chuncks
-#ifdef WAM_GPU
 #ifdef OMPGPU
-        !$omp target teams distribute private(KIJS,IJSB,KIJL,IJLB)
+        !$omp target teams distribute parallel do collapse(3) private(KIJS,IJSB,KIJL,II,J)
+          DO ICHNK = 1, NCHNK
+            DO M = 1, NFRE_RED
+              DO K = 1, NANG
+                 KIJS = 1
+                 IJSB = IJFROMCHNK(KIJS, ICHNK)
+                 KIJL = KIJL4CHNK(ICHNK)
+                 DO J = KIJS, KIJL
+                   II = IJSB + J - KIJS
+                   FL1(J, K, M, ICHNK) = FL3_EXT(II, K, M)
+                 ENDDO
+              ENDDO
+            ENDDO
+          ENDDO
+        !$omp end target teams distribute parallel do
+
+!       The J loop is empty when the chunk is full, so the KIJL < NPROMA_WAM guard
+!       is not needed here.
+        !$omp target teams distribute parallel do collapse(3) private(KIJL,J)
+          DO ICHNK = 1, NCHNK
+            DO M = 1, NFRE_RED
+              DO K = 1, NANG
+                KIJL = KIJL4CHNK(ICHNK)
+                DO J = KIJL+1,NPROMA_WAM
+                  FL1(J, K, M, ICHNK) = FL1(1, K, M, ICHNK)
+                ENDDO
+              ENDDO
+            ENDDO
+          ENDDO
+        !$omp end target teams distribute parallel do
 #else
+#ifdef WAM_GPU
         !$acc kernels loop independent private(KIJS, IJSB, KIJL, IJLB)
-#endif
 #else
 !$OMP     PARALLEL DO SCHEDULE(STATIC) PRIVATE(ICHNK, KIJS, IJSB, KIJL, IJLB, M, K, II, J)
 #endif
@@ -448,11 +485,7 @@ ENDIF  ! end sub time steps (if needed)
             IJSB = IJFROMCHNK(KIJS, ICHNK)
             KIJL = KIJL4CHNK(ICHNK)
             IJLB = IJFROMCHNK(KIJL, ICHNK)
-#ifdef OMPGPU
-            !$omp parallel do collapse(3) private(II)
-#else
             !$acc loop independent collapse(3)
-#endif
             DO M = 1, NFRE_RED
               DO K = 1, NANG
                  DO J = KIJS, KIJL
@@ -464,11 +497,7 @@ ENDIF  ! end sub time steps (if needed)
 
             IF (KIJL < NPROMA_WAM) THEN
               !!! make sure fictious points keep values of the first point in the chunk
-#ifdef OMPGPU
-              !$omp parallel do collapse(3)
-#else
               !$acc loop independent collapse(3)
-#endif
               DO M = 1, NFRE_RED
                 DO K = 1, NANG
                   DO J = KIJL+1,NPROMA_WAM
@@ -480,13 +509,10 @@ ENDIF  ! end sub time steps (if needed)
 
           ENDDO
 #ifdef WAM_GPU
-#ifdef OMPGPU
-        !$omp end target teams distribute
-#else
         !$acc end kernels
-#endif
 #else
 !$OMP     END PARALLEL DO
+#endif
 #endif
 
            CALL GSTATS(1430,1)

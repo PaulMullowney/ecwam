@@ -189,10 +189,45 @@
 !          ---------------------
 
 #ifdef OMPGPU
-        !$omp target teams distribute private(SD,CD,SS,SC,CC)
+        !$omp target teams distribute parallel do collapse(2) private(SD,CD)
+        DO K=1,NANG
+          DO IJ = KIJS,KIJL
+            SD = SINTH(K)
+            CD = COSTH(K)
+            IF (IREFRA == 1 .OR. IREFRA == 3) THEN
+              THDD(IJ,K) = SD*DDPHI(IJ) - CD*DDLAM(IJ)*DCO(IJ)
+            ELSE
+              THDD(IJ,K) = 0.0_JWRB
+            ENDIF
+          ENDDO
+        ENDDO
+        !$omp end target teams distribute parallel do
+
+        IF (IREFRA == 2 .OR. IREFRA == 3) THEN
+!         M stays sequential inside each thread: the M=NFRE_RED iteration overwrites
+!         the SDOT(IJ,K,NFRE_RED) that the earlier iterations read.
+        !$omp target teams distribute parallel do collapse(2) private(SD,CD,SS,SC,CC,M)
+        DO K=1,NANG
+          DO IJ=KIJS,KIJL
+            SD = SINTH(K)
+            CD = COSTH(K)
+            SS  = SD**2
+            SC  = SD*CD
+            CC  = CD**2
+            SDOT(IJ,K,NFRE_RED) = -SC*DUPHI(IJ) - CC*DVPHI(IJ)      &
+     &                      - (SS*DULAM(IJ) + SC*DVLAM(IJ))*DCO(IJ)
+            THDC(IJ,K) =  SS*DUPHI(IJ) + SC*DVPHI(IJ)               &
+     &                  - (SC*DULAM(IJ) + CC*DVLAM(IJ))*DCO(IJ)
+            DO M=1,NFRE_RED
+              SDOT(IJ,K,M) = (SDOT(IJ,K,NFRE_RED)*CGROUP_EXT(IJ,M)   &
+     &         + OMDD(IJ)*OMOSNH2KD_EXT(IJ,M)) * WAVNUM_EXT(IJ,M)
+            ENDDO
+          ENDDO
+        ENDDO
+        !$omp end target teams distribute parallel do
+        ENDIF
 #else
         !$acc parallel loop
-#endif
         DO K=1,NANG
           SD = SINTH(K)
           CD = COSTH(K)
@@ -201,20 +236,12 @@
 !            ----------------------------
 
           IF (IREFRA == 1 .OR. IREFRA == 3) THEN
-#ifdef OMPGPU
-            !$omp parallel do
-#else
             !$acc loop
-#endif
             DO IJ = KIJS,KIJL
               THDD(IJ,K) = SD*DDPHI(IJ) - CD*DDLAM(IJ)*DCO(IJ)
             ENDDO
           ELSE
-#ifdef OMPGPU
-            !$omp parallel do
-#else
             !$acc loop
-#endif
             DO IJ = KIJS,KIJL
               THDD(IJ,K) = 0.0_JWRB
             ENDDO
@@ -228,11 +255,7 @@
             SS  = SD**2
             SC  = SD*CD
             CC  = CD**2
-#ifdef OMPGPU
-            !$omp parallel do
-#else
             !$acc loop
-#endif
             DO IJ = KIJS,KIJL
               SDOT(IJ,K,NFRE_RED) = -SC*DUPHI(IJ) - CC*DVPHI(IJ)      &
      &                        - (SS*DULAM(IJ) + SC*DVLAM(IJ))*DCO(IJ)
@@ -243,13 +266,8 @@
 !*    2.5.3 LOOP OVER FREQUENCIES.
 !           ----------------------
 
-#ifndef OMPGPU
             !$acc loop independent collapse(2)
-#endif
             DO M=1,NFRE_RED
-#ifdef OMPGPU
-              !$omp parallel do
-#endif
               DO IJ=KIJS,KIJL
                 SDOT(IJ,K,M) = (SDOT(IJ,K,NFRE_RED)*CGROUP_EXT(IJ,M)   &
      &           + OMDD(IJ)*OMOSNH2KD_EXT(IJ,M)) * WAVNUM_EXT(IJ,M) 
@@ -260,8 +278,8 @@
 
 !*      BRANCH BACK TO 2.5 FOR NEXT DIRECTION.
         ENDDO
+#endif
 #ifdef OMPGPU
-        !$omp end target teams distribute
         !$omp end target data
 #else
         !$acc end parallel loop
