@@ -52,6 +52,7 @@
 ! ----------------------------------------------------------------------
 
       USE PARKIND_WAVE, ONLY : JWIM, JWRB, JWRU
+      USE ISO_C_BINDING, ONLY : C_INT, C_LOC, C_PTR
 
       USE YOWMPP   , ONLY : NPROC
       USE YOWPARAM , ONLY : LL1D     ,LLUNSTR
@@ -72,7 +73,7 @@
       INTEGER(KIND=JWIM), INTENT(IN) :: IJINF, IJSUP, KINF, KSUP, MINF, MSUP
       INTEGER(KIND=JWIM), INTENT(INOUT) :: IUNIT
 
-      REAL(KIND=JWRB), DIMENSION(IJINF:IJSUP,KINF:KSUP,MINF:MSUP), INTENT(INOUT) :: FL
+      REAL(KIND=JWRB), DIMENSION(IJINF:IJSUP,KINF:KSUP,MINF:MSUP), INTENT(INOUT), TARGET :: FL
 
       CHARACTER(LEN=296), INTENT(IN) :: FILENAME
 
@@ -81,10 +82,36 @@
       INTEGER(KIND=JWIM) :: LFILE, IJ, J2, J3
 
       REAL(KIND=JPHOOK) :: ZHOOK_HANDLE
-      REAL(KIND=JWRB),DIMENSION(IJINF:IJSUP,KINF:KSUP,MINF:MSUP) :: FL_G
+      REAL(KIND=JWRB),DIMENSION(IJINF:IJSUP,KINF:KSUP,MINF:MSUP), TARGET :: FL_G
       LOGICAL :: LSTREAM
 
       LOGICAL :: LLEXIST
+
+!     naan-stream-io's STREAM files carry no record markers, so unlike
+!     get_save_spec_opt there is nothing to parse by hand: LLFAST just
+!     swaps the whole buffer read by the existing single READ in one C
+!     pass instead of letting CONVERT='BIG_ENDIAN' swap it element by
+!     element in the runtime library.
+      INTEGER(KIND=JWIM), PARAMETER :: IELEMBYTES = STORAGE_SIZE(1.0_JWRB)/8
+#if defined(__amdflang__)
+      LOGICAL, PARAMETER :: LLFAST = (IELEMBYTES == 4 .OR. IELEMBYTES == 8)
+#else
+      LOGICAL, PARAMETER :: LLFAST = .FALSE.
+#endif
+      LOGICAL, PARAMETER :: LLWIDE = (IELEMBYTES == 8)
+
+      INTERFACE
+        SUBROUTINE BSWAP32_ARRAY(BUF, N) BIND(C, NAME='bswap32_array')
+          USE ISO_C_BINDING, ONLY : C_PTR, C_INT
+          TYPE(C_PTR), VALUE :: BUF
+          INTEGER(KIND=C_INT), VALUE, INTENT(IN) :: N
+        END SUBROUTINE BSWAP32_ARRAY
+        SUBROUTINE BSWAP64_ARRAY(BUF, N) BIND(C, NAME='bswap64_array')
+          USE ISO_C_BINDING, ONLY : C_PTR, C_INT
+          TYPE(C_PTR), VALUE :: BUF
+          INTEGER(KIND=C_INT), VALUE, INTENT(IN) :: N
+        END SUBROUTINE BSWAP64_ARRAY
+      END INTERFACE
 
 ! ----------------------------------------------------------------------
 
@@ -115,7 +142,15 @@
           WRITE (*,*) '*************************************'
           CALL ABORT1
         ENDIF
-        IUNIT=IWAM_GET_UNIT(IU06, FILENAME(1:LFILE), 'r', 'u',0,'READWRITE', LSTREAM=LSTREAM)
+        IF (LLFAST) THEN
+!         Bypass IWAM_GET_UNIT's CONVERT='BIG_ENDIAN': the swap happens by
+!         hand below, in one pass, instead of element by element on read.
+          OPEN(NEWUNIT=IUNIT, FILE=FILENAME(1:LFILE),                   &
+     &         FORM='UNFORMATTED', ACCESS='STREAM',                     &
+     &         STATUS='OLD', ACTION='READ')
+        ELSE
+          IUNIT=IWAM_GET_UNIT(IU06, FILENAME(1:LFILE), 'r', 'u',0,'READWRITE', LSTREAM=LSTREAM)
+        ENDIF
       ENDIF
 
       IF (LLUNSTR .AND. .NOT.LRSTPARAL) THEN
@@ -124,6 +159,7 @@
      &                  IJ=IJINF,IJSUP),                                &
      &                  J2=KINF,KSUP),                                  &
      &                  J3=MINF,MSUP)
+        IF (LLFAST) CALL SWAP_ELEMS(C_LOC(FL_G(IJINF,KINF,MINF)), SIZE(FL_G))
 
         CALL UNBLKRORD(-1,IJINF,IJSUP,KINF,KSUP,MINF,MSUP,              &
      &                 FL(IJINF:IJSUP,KINF:KSUP,MINF:MSUP),             &
@@ -136,10 +172,12 @@
      &                  IJ=IJINF,IJSUP),                                &
      &                  J2=KINF,KSUP),                                  &
      &                  J3=MINF,MSUP)
+        IF (LLFAST) CALL SWAP_ELEMS(C_LOC(FL(IJINF,KINF,MINF)), SIZE(FL))
       ELSE
 !       WHEN 2-D DECOMPOSITION IS USED THEN THE INDEXES IJ ARE RE-LABELLED
 !       BUT THE BINARY INPUT FILES ARE IN THE OLD MAPPING
         READ(IUNIT) FL_G(IJINF:IJSUP,KINF:KSUP,MINF:MSUP)
+        IF (LLFAST) CALL SWAP_ELEMS(C_LOC(FL_G(IJINF,KINF,MINF)), SIZE(FL_G))
 !       RE-ORDER
 !$OMP   PARALLEL DO SCHEDULE(STATIC) PRIVATE(J3, J2, IJ)
         DO J3 = MINF, MSUP
@@ -156,5 +194,20 @@
       IF (LCUNIT) CLOSE(IUNIT)
 
       IF (LHOOK) CALL DR_HOOK('READFL',1,ZHOOK_HANDLE)
+
+      CONTAINS
+
+      SUBROUTINE SWAP_ELEMS(P, N)
+!     Byte-reverse N reals at P, at whatever width the build uses. Ported
+!     from get_save_spec_opt's byte-swap fast path, with the record-marker
+!     handling stripped out: this file format has none to preserve.
+      TYPE(C_PTR), INTENT(IN) :: P
+      INTEGER(KIND=JWIM), INTENT(IN) :: N
+      IF (LLWIDE) THEN
+        CALL BSWAP64_ARRAY(P, INT(N, C_INT))
+      ELSE
+        CALL BSWAP32_ARRAY(P, INT(N, C_INT))
+      ENDIF
+      END SUBROUTINE SWAP_ELEMS
 
       END SUBROUTINE READFL
